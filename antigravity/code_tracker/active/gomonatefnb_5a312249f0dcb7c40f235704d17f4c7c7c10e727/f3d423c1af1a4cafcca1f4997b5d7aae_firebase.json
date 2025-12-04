@@ -1,0 +1,9 @@
+­{
+    "firestore": {
+        "rules": "firestore.rules",
+        "indexes": "firestore.indexes.json"
+    },
+    "storage": {
+        "rules": "storage.rules"
+    }
+}­*cascade08"(5a312249f0dcb7c40f235704d17f4c7c7c10e7272Tfile:///c:/Users/benzi/Dropbox/VS%20Code%20Projects%202025/gomonatefnb/firebase.json:Ffile:///c:/Users/benzi/Dropbox/VS%20Code%20Projects%202025/gomonatefnb

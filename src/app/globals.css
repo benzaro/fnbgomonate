@@ -1,26 +1,367 @@
 @import "tailwindcss";
 
+/* ============================================
+   GoMonate FNB Design System
+   Brand Colors: Teal #00AAAC, Orange #F59C23
+   ============================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* FNB Brand Colors */
+  --fnb-teal: #00AAAC;
+  --fnb-teal-light: #E6F7F7;
+  --fnb-teal-dark: #008B8D;
+  --fnb-teal-50: rgba(0, 170, 172, 0.05);
+  --fnb-teal-10: rgba(0, 170, 172, 0.1);
+
+  --fnb-orange: #F59C23;
+  --fnb-orange-light: #FEF3E2;
+  --fnb-orange-dark: #D4820F;
+
+  --fnb-black: #010202;
+  --fnb-white: #FFFFFF;
+
+  /* Semantic Colors - Light Mode */
+  --background: #F8F8F6;
+  --background-card: #FFFFFF;
+  --background-elevated: #FFFFFF;
+  --foreground: #010202;
+  --foreground-secondary: #374151;
+  --muted: #6B7280;
+  --muted-foreground: #9CA3AF;
+  --border: #E5E7EB;
+  --border-light: #F3F4F6;
+  --ring: #00AAAC;
+
+  /* Status Colors */
+  --success: #10B981;
+  --success-light: #D1FAE5;
+  --success-foreground: #065F46;
+  --error: #EF4444;
+  --error-light: #FEE2E2;
+  --error-foreground: #991B1B;
+  --warning: #F59E0B;
+  --warning-light: #FEF3C7;
+  --warning-foreground: #92400E;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+  --shadow-glow-teal: 0 0 20px rgba(0, 170, 172, 0.15);
+  --shadow-glow-orange: 0 0 20px rgba(245, 156, 35, 0.15);
+
+  /* Border Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0F1419;
+    --background-card: #1A2332;
+    --background-elevated: #243044;
+    --foreground: #F8F8F6;
+    --foreground-secondary: #D1D5DB;
+    --muted: #9CA3AF;
+    --muted-foreground: #6B7280;
+    --border: #374151;
+    --border-light: #1F2937;
+
+    /* Adjusted shadows for dark mode */
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+  }
+}
+
+/* Tailwind Theme Integration */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--background-card);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-ring: var(--ring);
+
+  /* FNB Colors */
+  --color-fnb-teal: var(--fnb-teal);
+  --color-fnb-teal-light: var(--fnb-teal-light);
+  --color-fnb-teal-dark: var(--fnb-teal-dark);
+  --color-fnb-orange: var(--fnb-orange);
+  --color-fnb-orange-light: var(--fnb-orange-light);
+  --color-fnb-orange-dark: var(--fnb-orange-dark);
+
+  /* Font Families */
+  --font-sans: var(--font-plus-jakarta);
+  --font-mono: var(--font-jetbrains);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Base Styles */
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus Ring Styles */
+*:focus-visible {
+  outline: 2px solid var(--fnb-teal);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--fnb-teal-light);
+  color: var(--fnb-teal-dark);
+}
+
+@media (prefers-color-scheme: dark) {
+  ::selection {
+    background-color: rgba(0, 170, 172, 0.3);
+    color: var(--foreground);
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--border-light);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Utility Classes */
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass {
+    background: rgba(26, 35, 50, 0.8);
+  }
+}
+
+.gradient-teal {
+  background: linear-gradient(135deg, var(--fnb-teal) 0%, var(--fnb-teal-dark) 100%);
+}
+
+.gradient-orange {
+  background: linear-gradient(135deg, var(--fnb-orange) 0%, var(--fnb-orange-dark) 100%);
+}
+
+.gradient-brand {
+  background: linear-gradient(135deg, var(--fnb-teal) 0%, var(--fnb-orange) 100%);
+}
+
+/* Subtle background pattern */
+.bg-pattern {
+  background-image:
+    radial-gradient(circle at 25% 25%, var(--fnb-teal-50) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(245, 156, 35, 0.03) 0%, transparent 50%);
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Button base styles */
+.btn-primary {
+  background-color: var(--fnb-teal);
+  color: white;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary:hover {
+  background-color: var(--fnb-teal-dark);
+  box-shadow: var(--shadow-glow-teal);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  background-color: var(--fnb-orange);
+  color: white;
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background-color: var(--fnb-orange-dark);
+  box-shadow: var(--shadow-glow-orange);
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--foreground);
+  transition: all var(--transition-fast);
+}
+
+.btn-ghost:hover {
+  background-color: var(--fnb-teal-10);
+  color: var(--fnb-teal);
+}
+
+/* Input styles */
+.input-base {
+  background-color: var(--background-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 1rem;
+  transition: all var(--transition-fast);
+}
+
+.input-base:focus {
+  border-color: var(--fnb-teal);
+  box-shadow: 0 0 0 3px var(--fnb-teal-10);
+}
+
+/* Badge styles */
+.badge-teal {
+  background-color: var(--fnb-teal-light);
+  color: var(--fnb-teal-dark);
+}
+
+.badge-orange {
+  background-color: var(--fnb-orange-light);
+  color: var(--fnb-orange-dark);
+}
+
+.badge-success {
+  background-color: var(--success-light);
+  color: var(--success-foreground);
+}
+
+.badge-error {
+  background-color: var(--error-light);
+  color: var(--error-foreground);
+}
+
+/* Loading spinner */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+  border: 2px solid var(--border);
+  border-top-color: var(--fnb-teal);
+  border-radius: 50%;
+}
+
+/* Pulse animation for QR codes */
+@keyframes pulse-subtle {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 170, 172, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(0, 170, 172, 0);
+  }
+}
+
+.pulse-qr {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-slow) ease-out;
+}
+
+/* Slide in from left */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft var(--transition-slow) ease-out;
+}
+
+/* Success checkmark animation */
+@keyframes checkmark {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Shake animation for errors */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
 }

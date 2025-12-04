@@ -1,0 +1,35 @@
+# GoMonate - FNB Beverage Management Platform Task List
+
+- [x] **Project Initialization** <!-- id: 0 -->
+    - [x] Initialize Next.js 15 project with Tailwind CSS <!-- id: 1 -->
+    - [x] Configure Firebase (Auth, Firestore, Storage) <!-- id: 2 -->
+    - [x] Set up project structure (components, lib, hooks) <!-- id: 3 -->
+- [x] **Database & Security** <!-- id: 4 -->
+    - [x] Define Firestore Security Rules <!-- id: 5 -->
+    - [x] Create initial indexes <!-- id: 6 -->
+- [x] **Authentication** <!-- id: 7 -->
+    - [x] Implement Login Page (Email/Password) <!-- id: 8 -->
+    - [x] Implement Role-based routing/protection <!-- id: 9 -->
+- [x] **SuperAdmin Dashboard** <!-- id: 10 -->
+    - [x] Dashboard Overview (Metrics) <!-- id: 11 -->
+    - [x] User Management (HR, Scanner) <!-- id: 12 -->
+    - [x] Employee Management (CSV Import, Manual Add) <!-- id: 13 -->
+    - [x] Reporting & Analytics <!-- id: 14 -->
+- [x] **HR Portal** <!-- id: 15 -->
+    - [x] Employee Search <!-- id: 16 -->
+    - [x] QR Code Assignment/Reassignment <!-- id: 17 -->
+- [x] **Employee Dashboard** <!-- id: 18 -->
+    - [x] QR Code Display <!-- id: 19 -->
+    - [x] Token Balance & History <!-- id: 20 -->
+    - [x] Registration Flow <!-- id: 21 -->
+- [x] **Scanner Station** <!-- id: 22 -->
+    - [x] QR Code Scanner Interface <!-- id: 23 -->
+    - [x] Manual Code Entry <!-- id: 24 -->
+    - [x] Redemption Logic & Transaction Logging <!-- id: 25 -->
+- [x] **Backend Logic (Cloud Functions)** <!-- id: 26 -->
+    - [x] Token Redemption (Implemented Client-side for MVP) <!-- id: 27 -->
+    - [x] QR Code Generation (Implemented Client-side for MVP) <!-- id: 28 -->
+    - [x] CSV Import Processing (Implemented Client-side for MVP) <!-- id: 29 -->
+- [x] **Verification** <!-- id: 30 -->
+    - [x] Build Verification <!-- id: 31 -->
+    - [x] Documentation <!-- id: 32 -->

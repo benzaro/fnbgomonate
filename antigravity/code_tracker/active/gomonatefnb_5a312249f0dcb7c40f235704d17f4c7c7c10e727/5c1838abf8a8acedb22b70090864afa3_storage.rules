@@ -1,0 +1,19 @@
+ÿrules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /qr-codes/{qrCodeId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only backend generates QR codes
+    }
+    match /reports/{reportId}/{allPaths=**} {
+      allow read: if request.auth != null && 
+                 firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+      allow write: if false; // Only backend generates reports
+    }
+    match /csv-imports/{importId}/{allPaths=**} {
+      allow read, write: if request.auth != null && 
+                          firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+    }
+  }
+}
+ÿ*cascade08"(5a312249f0dcb7c40f235704d17f4c7c7c10e7272Tfile:///c:/Users/benzi/Dropbox/VS%20Code%20Projects%202025/gomonatefnb/storage.rules:Ffile:///c:/Users/benzi/Dropbox/VS%20Code%20Projects%202025/gomonatefnb
