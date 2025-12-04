@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
-import { QRCodeCanvas } from "qrcode.react";
+import QRCodeWithLogo from "@/components/QRCodeWithLogo";
 
 interface Employee {
     id: string;
@@ -94,11 +94,17 @@ export default function HRDashboard() {
                 expiresAt: null,
             });
 
-            await updateDoc(doc(db, "employees", selectedEmployee.id), {
+            const updateData: any = {
                 registrationStatus: "code_assigned",
                 qrCodeId: qrCodeId,
-                tokenBalance: 18,
-            });
+            };
+
+            // Only set tokenBalance to 18 on initial assignment (when status is "pending")
+            if (selectedEmployee.registrationStatus === "pending") {
+                updateData.tokenBalance = 18;
+            }
+
+            await updateDoc(doc(db, "employees", selectedEmployee.id), updateData);
 
             setAssignedQR({
                 id: qrCodeId,
@@ -313,7 +319,12 @@ export default function HRDashboard() {
                                     {/* QR Code */}
                                     <div className="flex justify-center mb-6">
                                         <div className="p-4 bg-white rounded-2xl shadow-inner">
-                                            <QRCodeCanvas value={assignedQR.id} size={200} level="H" />
+                                            <QRCodeWithLogo
+                                                value={assignedQR.id}
+                                                size={200}
+                                                logoSize={60}
+                                                level="H"
+                                            />
                                         </div>
                                     </div>
 
