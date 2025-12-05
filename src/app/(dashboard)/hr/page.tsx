@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import QRCodeWithLogo from "@/components/QRCodeWithLogo";
@@ -31,19 +31,7 @@ export default function HRDashboard() {
     const [assigning, setAssigning] = useState(false);
     const [assignedQR, setAssignedQR] = useState<QRCodeData | null>(null);
 
-    useEffect(() => {
-        const delayDebounceFn = setTimeout(() => {
-            if (searchTerm) {
-                searchEmployees();
-            } else {
-                setEmployees([]);
-            }
-        }, 500);
-
-        return () => clearTimeout(delayDebounceFn);
-    }, [searchTerm]);
-
-    const searchEmployees = async () => {
+    const searchEmployees = useCallback(async () => {
         setLoading(true);
         try {
             const employeesRef = collection(db, "employees");
@@ -65,7 +53,19 @@ export default function HRDashboard() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [searchTerm]);
+
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(() => {
+            if (searchTerm) {
+                searchEmployees();
+            } else {
+                setEmployees([]);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm, searchEmployees]);
 
     const generateSixDigitCode = () => {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
