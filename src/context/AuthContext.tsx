@@ -43,8 +43,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     } else {
                         setUserData(null);
                     }
-                } catch (error) {
+                } catch (error: unknown) {
                     console.error("Error fetching user data:", error);
+
+                    // Check if it's a permission error
+                    if (error instanceof Error) {
+                        if (error.message.includes("permission") || error.message.includes("PERMISSION_DENIED")) {
+                            console.warn("Permission denied reading user document - Firestore rules may need adjustment");
+                        }
+                    }
+
+                    // Set userData to null but don't block login flow
+                    // The app will handle missing userData appropriately
                     setUserData(null);
                 }
             } else {
