@@ -28,6 +28,16 @@ function RegisterForm() {
         setLoading(true);
 
         try {
+            // Check if already authenticated anonymously
+            if (!auth.currentUser || !auth.currentUser.isAnonymous) {
+                // Sign in anonymously if not already signed in
+                await signInAnonymously(auth);
+            }
+            const user = auth.currentUser;
+            if (!user) {
+                throw new Error("Failed to authenticate. Please refresh and try again.");
+            }
+
             const qrCodesRef = collection(db, "qrCodes");
             let q = query(qrCodesRef, where("id", "==", code));
             let snapshot = await getDocs(q);
@@ -44,19 +54,20 @@ function RegisterForm() {
             const qrDoc = snapshot.docs[0];
             const qrData = qrDoc.data();
 
-            const userCredential = await signInAnonymously(auth);
-            const user = userCredential.user;
-
             if (!qrData.isRegistered) {
+                // Update QR code to mark as registered
                 await updateDoc(doc(db, "qrCodes", qrDoc.id), {
                     isRegistered: true,
                     registeredAt: serverTimestamp(),
                     registeredDeviceId: user.uid,
                 });
 
+                // Update employee registration status
                 await updateDoc(doc(db, "employees", qrData.employeeId), {
                     registrationStatus: "registered",
                 });
+            } else {
+                throw new Error("This code has already been registered.");
             }
 
             localStorage.setItem("gomonate_employee_code", qrDoc.id);
@@ -64,7 +75,14 @@ function RegisterForm() {
 
         } catch (err: unknown) {
             console.error("Registration error:", err);
-            setError(err instanceof Error ? err.message : "Failed to register. Please try again.");
+            const errorMessage = err instanceof Error ? err.message : "Failed to register. Please try again.";
+
+            // Provide specific guidance for permission errors
+            if (errorMessage.includes("permission") || errorMessage.includes("PERMISSION_DENIED")) {
+                setError("Permission denied. Please refresh the page and try again. If this persists, clear your browser cache.");
+            } else {
+                setError(errorMessage);
+            }
         } finally {
             setLoading(false);
         }

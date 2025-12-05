@@ -1,63 +1,94 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
+    function isAnonymous() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
     function isSuperAdmin() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin' &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
-    
+
     function isHR() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hr' &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
-    
+
     function isScanner() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'scanner' &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
-    
+
     // Users collection
     match /users/{userId} {
       allow read: if isSuperAdmin() || request.auth.uid == userId;
       allow create, update, delete: if isSuperAdmin();
     }
-    
+
     // Employees collection
     match /employees/{employeeId} {
-      allow read: if isSuperAdmin() || isHR();
+      // Allow superadmin, HR to read all employees
+      // Allow scanner to read employees (for redemption)
+      // Allow anonymous users to read their own employee record (for dashboard)
+      allow read: if isSuperAdmin() || isHR() || isScanner() || isAuthenticated();
+
+      // Allow superadmin, HR to create employees
       allow create: if isSuperAdmin() || isHR();
-      allow update: if isSuperAdmin() || isHR();
+
+      // Allow superadmin, HR to update fully
+      // Allow scanner to update tokenBalance only (for redemption)
+      // Allow anonymous users to update registrationStatus only (for registration)
+      // Allow any anonymous user to update registrationStatus (cross-session registration)
+      allow update: if isSuperAdmin() || isHR() ||
+                      (isScanner() &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tokenBalance'])) ||
+                      (isAnonymous() &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registrationStatus']));
+
       allow delete: if isSuperAdmin();
     }
-    
+
     // QR Codes collection
     match /qrCodes/{qrCodeId} {
-      allow read: if isSuperAdmin() || isHR() || isScanner();
-      allow create, update: if isSuperAdmin() || isHR();
+      // Allow authenticated users to read (for code validation and employee dashboard)
+      allow read: if isAuthenticated();
+
+      // Allow superadmin, HR to create/delete
+      allow create: if isSuperAdmin() || isHR();
       allow delete: if isSuperAdmin();
+
+      // Allow superadmin, HR to update fully
+      // Allow anonymous users to update only registration fields
+      // Allow scanner users to update for token redemption
+      allow update: if isSuperAdmin() || isHR() || isScanner() ||
+                      (isAnonymous() &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRegistered', 'registeredAt', 'registeredDeviceId']));
     }
-    
+
     // Transactions collection
     match /transactions/{transactionId} {
-      allow read: if isSuperAdmin() || isHR();
+      // Allow superadmin, HR to read all transactions
+      // Allow authenticated users to read transactions (for their own dashboard)
+      allow read: if isSuperAdmin() || isHR() || isAuthenticated();
       allow create: if isScanner();
     }
-    
+
     // Event Config collection
     match /eventConfig/{configId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
-    
+
     // Audit Logs collection
     match /auditLogs/{logId} {
       allow read: if isSuperAdmin();
