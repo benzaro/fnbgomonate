@@ -305,7 +305,7 @@ export default function EmployeeDashboard() {
                     <div className="flex justify-center mb-4">
                         <div className="p-4 bg-white rounded-2xl shadow-inner pulse-qr">
                             <QRCodeWithLogo
-                                value={qrCodeId}
+                                value={sixDigitCode || ""}
                                 size={200}
                                 logoSize={60}
                                 level="H"
