@@ -511,32 +511,34 @@ export default function ScannerPage() {
             {/* Manual Entry */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-white/10">
                 <p className="text-sm text-white/60 mb-4">Or enter 6-digit code manually:</p>
-                <form onSubmit={handleManualSubmit} className="flex gap-3">
+                <form onSubmit={handleManualSubmit} className="flex flex-col gap-3">
                     <input
                         type="text"
                         value={manualCode}
                         onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                         placeholder="A1B2C3"
-                        className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-xl font-mono tracking-[0.3em] uppercase placeholder:text-white/30 focus:border-[var(--fnb-teal)] focus:ring-2 focus:ring-[var(--fnb-teal)]/20 outline-none transition-all"
+                        className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-xl font-mono tracking-[0.3em] uppercase placeholder:text-white/30 focus:border-[var(--fnb-teal)] focus:ring-2 focus:ring-[var(--fnb-teal)]/20 outline-none transition-all"
                         disabled={processing}
                         maxLength={6}
                     />
-                    <button
-                        type="submit"
-                        disabled={processing || !manualCode || manualCode.length < 6}
-                        className="btn-primary px-6 py-3 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {processing ? (
-                            <div className="spinner w-5 h-5 border-white/30 border-t-white" />
-                        ) : (
-                            <>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                Redeem
-                            </>
-                        )}
-                    </button>
+                    <div className="flex justify-center">
+                        <button
+                            type="submit"
+                            disabled={processing || !manualCode || manualCode.length < 6}
+                            className="btn-primary px-6 py-3 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {processing ? (
+                                <div className="spinner w-5 h-5 border-white/30 border-t-white" />
+                            ) : (
+                                <>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Redeem
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </form>
             </div>
 
