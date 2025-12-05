@@ -31,7 +31,9 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      allow read: if isSuperAdmin() || request.auth.uid == userId;
+      // Allow users to read their own document (needed for role checking)
+      // Allow superadmin to read all user documents
+      allow read: if request.auth.uid == userId || isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
     }
 
