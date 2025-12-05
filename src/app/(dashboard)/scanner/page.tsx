@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { collection, query, where, getDocs, doc, runTransaction, serverTimestamp, orderBy, limit } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
@@ -14,9 +13,11 @@ interface ScanHistoryItem {
 }
 
 interface CameraInfo {
-    deviceId: string;
+    id: string;
     label: string;
 }
+
+type ScannerState = "initializing" | "streaming" | "error" | "unsupported" | "permission-denied";
 
 export default function ScannerPage() {
     const [scanResult, setScanResult] = useState<string | null>(null);
@@ -29,84 +30,157 @@ export default function ScannerPage() {
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [cameras, setCameras] = useState<CameraInfo[]>([]);
     const [selectedCamera, setSelectedCamera] = useState<string>("");
-    const [loadingCameras, setLoadingCameras] = useState(true);
+    const [scannerState, setScannerState] = useState<ScannerState>("initializing");
+    const [errorMessage, setErrorMessage] = useState<string>("");
     const [switchingCamera, setSwitchingCamera] = useState(false);
-    const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
-    // Initialize cameras on mount
-    useEffect(() => {
-        const initCameras = async () => {
+    const qrScannerRef = useRef<Html5Qrcode | null>(null);
+    const initializingRef = useRef<boolean>(false);
+    const cleanupRef = useRef<boolean>(false);
+    const mountedRef = useRef<boolean>(true);
+
+    // Stop scanner
+    const stopScanner = useCallback(async () => {
+        if (qrScannerRef.current) {
             try {
-                const availableCameras = await Html5Qrcode.getCameras();
-                if (availableCameras && availableCameras.length > 0) {
-                    const cameraInfos: CameraInfo[] = availableCameras.map((device) => ({
-                        deviceId: device.id,
-                        label: device.label || `Camera (${device.id})`,
-                    }));
-
-                    setCameras(cameraInfos);
-
-                    // Get stored preference or auto-select back camera
-                    const storedCameraId = localStorage.getItem("gomonate_selected_camera");
-                    let defaultCamera = storedCameraId || "";
-
-                    if (!defaultCamera) {
-                        // Try to find back camera
-                        const backCamera = cameraInfos.find(
-                            (c) =>
-                                c.label.toLowerCase().includes("back") ||
-                                c.label.toLowerCase().includes("rear") ||
-                                c.label.toLowerCase().includes("environment")
-                        );
-                        defaultCamera = backCamera ? backCamera.deviceId : cameraInfos[0].deviceId;
-                    }
-
-                    setSelectedCamera(defaultCamera);
+                const state = qrScannerRef.current.getState();
+                if (state === 2) { // 2 = SCANNING state
+                    await qrScannerRef.current.stop();
                 }
+                await qrScannerRef.current.clear();
+                qrScannerRef.current = null;
             } catch (error) {
-                console.error("Error getting cameras:", error);
-            } finally {
-                setLoadingCameras(false);
+                console.error("Scanner cleanup error:", error);
             }
-        };
-
-        initCameras();
+        }
+        const container = document.getElementById("qr-scanner-container");
+        if (container) {
+            container.innerHTML = "";
+        }
     }, []);
 
-    // Initialize scanner when camera is selected
+    // Initialize cameras and scanner on mount
     useEffect(() => {
-        const timer = setTimeout(() => {
-            if (!scannerRef.current && selectedCamera) {
-                const scanner = new Html5QrcodeScanner(
-                    "reader",
+        mountedRef.current = true;
+
+        ;(async () => {
+            try {
+                if (initializingRef.current) return;
+                initializingRef.current = true;
+                setScannerState("initializing");
+                setErrorMessage("");
+
+                // Wait for DOM to be ready
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                if (cleanupRef.current || !mountedRef.current) return;
+
+                const container = document.getElementById("qr-scanner-container");
+                if (!container) {
+                    setScannerState("error");
+                    setErrorMessage("Scanner initialization failed. Please refresh the page.");
+                    initializingRef.current = false;
+                    return;
+                }
+
+                // Get available cameras
+                const devices = await Html5Qrcode.getCameras();
+                if (cleanupRef.current || !mountedRef.current) return;
+
+                if (!devices || devices.length === 0) {
+                    setScannerState("unsupported");
+                    setErrorMessage("No camera device found on this device.");
+                    initializingRef.current = false;
+                    return;
+                }
+
+                // Set available cameras
+                const cameraList: CameraInfo[] = devices.map(device => ({
+                    id: device.id,
+                    label: device.label || `Camera ${devices.indexOf(device) + 1}`,
+                }));
+                setCameras(cameraList);
+
+                // Get stored preference or auto-select back camera
+                const storedCameraId = localStorage.getItem("gomonate_selected_camera");
+                let cameraToUse = storedCameraId || "";
+
+                if (!cameraToUse) {
+                    // Try to find back camera
+                    const backCamera = cameraList.find(
+                        (c) =>
+                            c.label.toLowerCase().includes("back") ||
+                            c.label.toLowerCase().includes("rear") ||
+                            c.label.toLowerCase().includes("environment")
+                    );
+                    cameraToUse = backCamera ? backCamera.id : cameraList[0].id;
+                }
+
+                setSelectedCamera(cameraToUse);
+
+                if (cleanupRef.current || !mountedRef.current || qrScannerRef.current) {
+                    initializingRef.current = false;
+                    return;
+                }
+
+                // Clear container before creating new instance
+                container.innerHTML = "";
+                const qrScanner = new Html5Qrcode("qr-scanner-container");
+                qrScannerRef.current = qrScanner;
+
+                // Start scanner
+                await qrScanner.start(
+                    cameraToUse,
                     {
                         fps: 10,
                         qrbox: { width: 280, height: 280 },
-                        defaultZoom: 1.2,
-                        deviceId: selectedCamera,
                     },
-                    false
+                    onScanSuccess,
+                    (error) => {
+                        console.debug("QR scan error:", error);
+                    }
                 );
 
-                scanner.render(onScanSuccess, onScanFailure);
-                scannerRef.current = scanner;
+                if (!cleanupRef.current && mountedRef.current) {
+                    setScannerState("streaming");
+                    initializingRef.current = false;
+                } else {
+                    await stopScanner();
+                    initializingRef.current = false;
+                }
+            } catch (error: unknown) {
+                if (cleanupRef.current || !mountedRef.current) {
+                    initializingRef.current = false;
+                    return;
+                }
+
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                console.error("Scanner initialization error:", error);
+
+                if (errorMsg.includes("Permission denied") || errorMsg.includes("NotAllowedError")) {
+                    setScannerState("permission-denied");
+                    setErrorMessage("Camera permission denied. Please enable camera access in your browser settings.");
+                } else if (errorMsg.includes("NotFoundError")) {
+                    setScannerState("unsupported");
+                    setErrorMessage("No camera found on this device.");
+                } else if (errorMsg.includes("NotSupportedError")) {
+                    setScannerState("unsupported");
+                    setErrorMessage("Camera access not supported by this browser.");
+                } else {
+                    setScannerState("error");
+                    setErrorMessage(errorMsg || "Failed to initialize camera. Please try again.");
+                }
+                initializingRef.current = false;
             }
-        }, 100);
+        })();
 
         return () => {
-            clearTimeout(timer);
+            cleanupRef.current = true;
+            initializingRef.current = false;
+            mountedRef.current = false;
+            stopScanner();
         };
-    }, [selectedCamera]);
-
-    // Cleanup scanner on unmount
-    useEffect(() => {
-        return () => {
-            if (scannerRef.current) {
-                scannerRef.current.clear().catch(error => console.error("Failed to clear scanner", error));
-                scannerRef.current = null;
-            }
-        };
-    }, []);
+    }, [stopScanner]);
 
     const onScanSuccess = (decodedText: string) => {
         if (!processing) {
@@ -213,19 +287,50 @@ export default function ScannerPage() {
     const handleCameraChange = async (cameraId: string) => {
         setSwitchingCamera(true);
         try {
-            // Store preference
             localStorage.setItem("gomonate_selected_camera", cameraId);
+            setSelectedCamera(cameraId);
 
-            // Clear current scanner
-            if (scannerRef.current) {
-                await scannerRef.current.clear();
-                scannerRef.current = null;
+            // Stop current scanner
+            await stopScanner();
+
+            // Reinitialize with new camera
+            initializingRef.current = false;
+            cleanupRef.current = false;
+            setScannerState("initializing");
+
+            // Trigger reinitialization by clearing refs
+            if (qrScannerRef.current) {
+                qrScannerRef.current = null;
             }
 
-            // Update camera and let useEffect reinitialize
-            setSelectedCamera(cameraId);
+            // Create new scanner instance with selected camera
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const container = document.getElementById("qr-scanner-container");
+            if (container) {
+                container.innerHTML = "";
+            }
+
+            const qrScanner = new Html5Qrcode("qr-scanner-container");
+            qrScannerRef.current = qrScanner;
+
+            await qrScanner.start(
+                cameraId,
+                {
+                    fps: 10,
+                    qrbox: { width: 280, height: 280 },
+                },
+                onScanSuccess,
+                (error) => {
+                    console.debug("QR scan error:", error);
+                }
+            );
+
+            setScannerState("streaming");
         } catch (error) {
             console.error("Error switching camera:", error);
+            setScannerState("error");
+            setErrorMessage("Failed to switch camera. Please try again.");
         } finally {
             setSwitchingCamera(false);
         }
@@ -291,6 +396,70 @@ export default function ScannerPage() {
         setScanHistory(prev => [newItem, ...prev]);
     };
 
+    // Handle error states
+    if (scannerState === "unsupported") {
+        return (
+            <div className="max-w-lg mx-auto animate-fade-in">
+                <div className="rounded-2xl p-6 bg-red-500/20 border border-red-500/30">
+                    <div className="flex flex-col items-center gap-4">
+                        <svg className="w-12 h-12 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-center">
+                            <h3 className="text-lg font-semibold text-red-400 mb-2">Camera Not Supported</h3>
+                            <p className="text-white/70 mb-4">{errorMessage}</p>
+                            <p className="text-white/50 text-sm">Use manual input instead to proceed.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (scannerState === "permission-denied") {
+        return (
+            <div className="max-w-lg mx-auto animate-fade-in">
+                <div className="rounded-2xl p-6 bg-orange-500/20 border border-orange-500/30">
+                    <div className="flex flex-col items-center gap-4">
+                        <svg className="w-12 h-12 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        <div className="text-center">
+                            <h3 className="text-lg font-semibold text-orange-400 mb-2">Camera Permission Denied</h3>
+                            <p className="text-white/70 mb-4">{errorMessage}</p>
+                            <div className="bg-white/5 rounded p-3 mb-4 text-left text-xs text-white/60">
+                                <p className="font-medium mb-2 text-orange-300">To enable camera:</p>
+                                <ol className="list-decimal list-inside space-y-1">
+                                    <li>Click the lock icon in your address bar</li>
+                                    <li>Find "Camera" and set it to "Allow"</li>
+                                    <li>Refresh the page</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (scannerState === "error") {
+        return (
+            <div className="max-w-lg mx-auto animate-fade-in">
+                <div className="rounded-2xl p-6 bg-red-500/20 border border-red-500/30">
+                    <div className="flex flex-col items-center gap-4">
+                        <svg className="w-12 h-12 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="text-center">
+                            <h3 className="text-lg font-semibold text-red-400 mb-2">Camera Error</h3>
+                            <p className="text-white/70">{errorMessage}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-lg mx-auto animate-fade-in">
             {/* Header */}
@@ -302,47 +471,41 @@ export default function ScannerPage() {
             {/* Camera Selector */}
             {cameras.length > 1 && (
                 <div className="mb-6 flex gap-3 items-center">
-                    <label htmlFor="camera-select" className="text-sm font-medium text-white/70">
+                    <label htmlFor="camera-select" className="text-sm font-medium text-white/70 whitespace-nowrap">
                         Camera:
                     </label>
                     <select
                         id="camera-select"
                         value={selectedCamera}
                         onChange={(e) => handleCameraChange(e.target.value)}
-                        disabled={loadingCameras || switchingCamera}
+                        disabled={switchingCamera || scannerState !== "streaming"}
                         className="flex-1 px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:border-[var(--fnb-teal)] focus:ring-2 focus:ring-[var(--fnb-teal)]/20 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loadingCameras ? (
-                            <option>Loading cameras...</option>
-                        ) : (
-                            cameras.map((camera) => (
-                                <option key={camera.deviceId} value={camera.deviceId}>
-                                    {camera.label}
-                                </option>
-                            ))
-                        )}
+                        {cameras.map((camera) => (
+                            <option key={camera.id} value={camera.id}>
+                                {camera.label}
+                            </option>
+                        ))}
                     </select>
                     {switchingCamera && (
                         <div className="flex items-center gap-2 text-white/70">
                             <div className="spinner w-4 h-4 border-white/30 border-t-white" />
-                            <span className="text-xs">Switching...</span>
                         </div>
                     )}
                 </div>
             )}
 
             {/* Scanner Area */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/10">
-                {loadingCameras ? (
-                    <div className="h-80 flex items-center justify-center">
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/10 relative overflow-hidden">
+                {scannerState === "initializing" && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/5 backdrop-blur-sm z-10">
                         <div className="text-center">
                             <div className="spinner w-8 h-8 mx-auto mb-3 border-white/30 border-t-white" />
                             <p className="text-white/70 text-sm">Initializing camera...</p>
                         </div>
                     </div>
-                ) : (
-                    <div id="reader" className="overflow-hidden rounded-xl" />
                 )}
+                <div id="qr-scanner-container" className="overflow-hidden rounded-xl h-80" />
             </div>
 
             {/* Manual Entry */}
