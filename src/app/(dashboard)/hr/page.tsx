@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { collection, getDocs, query, where, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import QRCodeWithLogo from "@/components/QRCodeWithLogo";
 
@@ -22,61 +22,62 @@ interface QRCodeData {
     qrCodeUrl: string;
 }
 
+const ITEMS_PER_PAGE = 100;
+
 export default function HRDashboard() {
     const [searchTerm, setSearchTerm] = useState("");
-    const [employees, setEmployees] = useState<Employee[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+    const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
     const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
     const [assigning, setAssigning] = useState(false);
     const [assignedQR, setAssignedQR] = useState<QRCodeData | null>(null);
 
-    const searchEmployees = useCallback(async () => {
+    // Fetch all employees on mount
+    const fetchAllEmployees = useCallback(async () => {
         setLoading(true);
         try {
-            console.log("🔍 Starting search for:", searchTerm);
-            const employeesRef = collection(db, "employees");
-            const q = query(
-                employeesRef,
-                where("email", ">=", searchTerm),
-                where("email", "<=", searchTerm + "\uf8ff")
-            );
-
-            console.log("📡 Querying Firestore...");
+            const q = query(collection(db, "employees"), orderBy("email"));
             const snapshot = await getDocs(q);
-            console.log("✅ Query successful, documents found:", snapshot.size);
-
             const results: Employee[] = [];
             snapshot.forEach((doc) => {
                 results.push({ id: doc.id, ...doc.data() } as Employee);
             });
-
-            console.log("📊 Setting employees:", results.length);
-            setEmployees(results);
+            setAllEmployees(results);
+            setFilteredEmployees(results);
         } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            console.error("❌ Error searching employees:", errorMsg);
-            console.error("Full error:", error);
-            // Show alert with error for debugging
-            if (searchTerm) {
-                alert(`Search error: ${errorMsg}`);
-            }
+            console.error("Error fetching employees:", error);
+            alert("Failed to load employees. Please refresh the page.");
         } finally {
             setLoading(false);
         }
-    }, [searchTerm]);
+    }, []);
 
     useEffect(() => {
-        const delayDebounceFn = setTimeout(() => {
-            if (searchTerm) {
-                searchEmployees();
-            } else {
-                setEmployees([]);
-            }
-        }, 500);
+        fetchAllEmployees();
+    }, [fetchAllEmployees]);
 
-        return () => clearTimeout(delayDebounceFn);
-    }, [searchTerm, searchEmployees]);
+    // Client-side filtering
+    useEffect(() => {
+        if (!searchTerm.trim()) {
+            setFilteredEmployees(allEmployees);
+            setCurrentPage(1);
+            return;
+        }
+
+        const term = searchTerm.toLowerCase();
+        const filtered = allEmployees.filter((emp) =>
+            emp.firstName.toLowerCase().includes(term) ||
+            emp.lastName.toLowerCase().includes(term) ||
+            emp.email.toLowerCase().includes(term) ||
+            emp.mobileNumber.includes(term)
+        );
+
+        setFilteredEmployees(filtered);
+        setCurrentPage(1);
+    }, [searchTerm, allEmployees]);
 
     const generateSixDigitCode = () => {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -123,7 +124,7 @@ export default function HRDashboard() {
                 qrCodeUrl: `https://gomonate.app/register?code=${qrCodeId}`,
             });
 
-            searchEmployees();
+            await fetchAllEmployees();
         } catch (error) {
             console.error("Error assigning code:", error);
             alert("Failed to assign code");
@@ -149,18 +150,24 @@ export default function HRDashboard() {
         }
     };
 
+    // Pagination
+    const totalPages = Math.ceil(filteredEmployees.length / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const displayedEmployees = filteredEmployees.slice(startIndex, endIndex);
+
     return (
         <div className="animate-fade-in">
             {/* Page Header */}
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-[var(--foreground)]">Employee Search</h1>
+                <h1 className="text-2xl font-bold text-[var(--foreground)]">Employee QR Management</h1>
                 <p className="text-[var(--muted)] mt-1">
-                    Search for employees to assign or reassign QR codes
+                    Search or browse employees to assign or reassign QR codes
                 </p>
             </div>
 
-            {/* Search Box */}
-            <div className="max-w-2xl mb-8">
+            {/* Search Box with Clear Button */}
+            <div className="max-w-2xl mb-6">
                 <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -169,18 +176,45 @@ export default function HRDashboard() {
                     </div>
                     <input
                         type="text"
-                        className="input-base w-full pl-12 pr-4 py-4 text-lg"
-                        placeholder="Search by employee email..."
+                        className="input-base w-full pl-12 pr-12 py-4 text-lg"
+                        placeholder="Search by name, email, or mobile..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                    {loading && (
-                        <div className="absolute inset-y-0 right-0 pr-4 flex items-center">
-                            <div className="spinner w-5 h-5" />
-                        </div>
+                    {searchTerm && (
+                        <button
+                            onClick={() => setSearchTerm("")}
+                            className="absolute inset-y-0 right-0 pr-4 flex items-center hover:text-[var(--foreground)] transition-colors text-[var(--muted)]"
+                            title="Clear search"
+                        >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
                     )}
                 </div>
             </div>
+
+            {/* Results Summary */}
+            {!loading && (
+                <div className="flex items-center justify-between mb-4 px-2">
+                    <p className="text-sm text-[var(--muted)]">
+                        {filteredEmployees.length === 0 ? (
+                            searchTerm ? "No employees found" : "Loading employees..."
+                        ) : (
+                            <>
+                                Showing <span className="font-semibold text-[var(--foreground)]">{startIndex + 1}–{Math.min(endIndex, filteredEmployees.length)}</span> of{" "}
+                                <span className="font-semibold text-[var(--foreground)]">{filteredEmployees.length}</span> employees
+                                {searchTerm && (
+                                    <span className="text-[var(--muted-foreground)] ml-2">
+                                        (filtered from {allEmployees.length} total)
+                                    </span>
+                                )}
+                            </>
+                        )}
+                    </p>
+                </div>
+            )}
 
             {/* Results Table */}
             <div className="bg-[var(--background-card)] rounded-2xl shadow-sm border border-[var(--border-light)] overflow-hidden">
@@ -209,9 +243,10 @@ export default function HRDashboard() {
                             <tr>
                                 <td colSpan={5} className="text-center py-12">
                                     <div className="spinner w-8 h-8 mx-auto" />
+                                    <p className="text-[var(--muted)] mt-3">Loading employees...</p>
                                 </td>
                             </tr>
-                        ) : employees.length === 0 ? (
+                        ) : displayedEmployees.length === 0 ? (
                             <tr>
                                 <td colSpan={5} className="text-center py-12">
                                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--background)] flex items-center justify-center">
@@ -220,12 +255,15 @@ export default function HRDashboard() {
                                         </svg>
                                     </div>
                                     <p className="text-[var(--muted)]">
-                                        {searchTerm ? "No employees found" : "Start typing to search employees"}
+                                        {searchTerm ? "No employees found matching your search" : "No employees available"}
                                     </p>
+                                    {searchTerm && (
+                                        <p className="text-sm text-[var(--muted-foreground)] mt-2">Try clearing the search to see all employees</p>
+                                    )}
                                 </td>
                             </tr>
                         ) : (
-                            employees.map((employee) => (
+                            displayedEmployees.map((employee) => (
                                 <tr key={employee.id} className="hover:bg-[var(--background)] transition-colors">
                                     <td className="whitespace-nowrap py-4 pl-6 pr-3">
                                         <div className="flex items-center gap-3">
@@ -270,6 +308,39 @@ export default function HRDashboard() {
                     </tbody>
                 </table>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-4 mt-8">
+                    <button
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage((p) => p - 1)}
+                        className="btn-ghost px-6 py-3 rounded-xl font-medium border border-[var(--border)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <svg className="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Previous
+                    </button>
+
+                    <div className="px-6 py-3 rounded-xl bg-[var(--background-card)] border border-[var(--border-light)]">
+                        <span className="font-medium text-[var(--foreground)]">
+                            Page {currentPage} of {totalPages}
+                        </span>
+                    </div>
+
+                    <button
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage((p) => p + 1)}
+                        className="btn-primary px-6 py-3 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        Next
+                        <svg className="w-5 h-5 inline ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+            )}
 
             {/* Assignment Modal */}
             {isAssignModalOpen && selectedEmployee && (
