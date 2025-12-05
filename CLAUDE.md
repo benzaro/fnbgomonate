@@ -56,6 +56,8 @@ npm run lint     # Run ESLint (flat config in eslint.config.mjs)
 
 ## Environment Setup
 
+### Local Development
+
 Copy `env.example` to `.env.local` and add Firebase credentials:
 ```
 NEXT_PUBLIC_FIREBASE_API_KEY=
@@ -65,6 +67,17 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 ```
+
+### Vercel Deployment
+
+**IMPORTANT:** `.env.local` is NOT deployed to Vercel. You must set environment variables in Vercel:
+
+1. Go to Vercel Dashboard → Select GoMonate project
+2. Go to **Settings** → **Environment Variables**
+3. Add each `NEXT_PUBLIC_FIREBASE_*` variable from your `.env.local`
+4. Redeploy the project
+
+Without these environment variables on Vercel, Firebase cannot initialize and login will fail with "Invalid email or password".
 
 ## Firebase Configuration
 
