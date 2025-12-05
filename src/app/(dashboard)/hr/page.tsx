@@ -34,6 +34,7 @@ export default function HRDashboard() {
     const searchEmployees = useCallback(async () => {
         setLoading(true);
         try {
+            console.log("🔍 Starting search for:", searchTerm);
             const employeesRef = collection(db, "employees");
             const q = query(
                 employeesRef,
@@ -41,15 +42,25 @@ export default function HRDashboard() {
                 where("email", "<=", searchTerm + "\uf8ff")
             );
 
+            console.log("📡 Querying Firestore...");
             const snapshot = await getDocs(q);
+            console.log("✅ Query successful, documents found:", snapshot.size);
+
             const results: Employee[] = [];
             snapshot.forEach((doc) => {
                 results.push({ id: doc.id, ...doc.data() } as Employee);
             });
 
+            console.log("📊 Setting employees:", results.length);
             setEmployees(results);
         } catch (error) {
-            console.error("Error searching employees:", error);
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            console.error("❌ Error searching employees:", errorMsg);
+            console.error("Full error:", error);
+            // Show alert with error for debugging
+            if (searchTerm) {
+                alert(`Search error: ${errorMsg}`);
+            }
         } finally {
             setLoading(false);
         }
