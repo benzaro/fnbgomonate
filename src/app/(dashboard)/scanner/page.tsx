@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Html5QrcodeScanner, CameraDevice } from "html5-qrcode";
+import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 import { collection, query, where, getDocs, doc, runTransaction, serverTimestamp, orderBy, limit } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 
@@ -13,7 +14,7 @@ interface ScanHistoryItem {
 }
 
 interface CameraInfo {
-    device: CameraDevice;
+    deviceId: string;
     label: string;
 }
 
@@ -36,10 +37,10 @@ export default function ScannerPage() {
     useEffect(() => {
         const initCameras = async () => {
             try {
-                const availableCameras = await Html5QrcodeScanner.getCameras();
-                if (availableCameras.length > 0) {
+                const availableCameras = await Html5Qrcode.getCameras();
+                if (availableCameras && availableCameras.length > 0) {
                     const cameraInfos: CameraInfo[] = availableCameras.map((device) => ({
-                        device,
+                        deviceId: device.id,
                         label: device.label || `Camera (${device.id})`,
                     }));
 
@@ -57,7 +58,7 @@ export default function ScannerPage() {
                                 c.label.toLowerCase().includes("rear") ||
                                 c.label.toLowerCase().includes("environment")
                         );
-                        defaultCamera = backCamera ? backCamera.device.id : cameraInfos[0].device.id;
+                        defaultCamera = backCamera ? backCamera.deviceId : cameraInfos[0].deviceId;
                     }
 
                     setSelectedCamera(defaultCamera);
@@ -78,19 +79,17 @@ export default function ScannerPage() {
             if (!scannerRef.current && selectedCamera) {
                 const scanner = new Html5QrcodeScanner(
                     "reader",
-                    { fps: 10, qrbox: { width: 280, height: 280 }, defaultZoom: 1.2 },
+                    {
+                        fps: 10,
+                        qrbox: { width: 280, height: 280 },
+                        defaultZoom: 1.2,
+                        deviceId: selectedCamera,
+                    },
                     false
                 );
 
                 scanner.render(onScanSuccess, onScanFailure);
                 scannerRef.current = scanner;
-
-                // Set the camera after scanner is rendered
-                if (selectedCamera && scanner.getState() === Html5QrcodeScanner.STATES.SCANNING) {
-                    scanner.applyConstraints({ facingMode: selectedCamera }).catch((error) => {
-                        console.error("Error applying camera constraints:", error);
-                    });
-                }
             }
         }, 100);
 
@@ -317,7 +316,7 @@ export default function ScannerPage() {
                             <option>Loading cameras...</option>
                         ) : (
                             cameras.map((camera) => (
-                                <option key={camera.device.id} value={camera.device.id}>
+                                <option key={camera.deviceId} value={camera.deviceId}>
                                     {camera.label}
                                 </option>
                             ))
