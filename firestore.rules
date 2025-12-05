@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // Helper function - only checks if user is logged in
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,101 +11,123 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
-    // Safe version that doesn't cause circular dependency
-    function getUserRole() {
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return userDoc.data.role;
+    // Helper to get user data - used for role checks
+    // IMPORTANT: These functions read from users collection, so they cannot be used
+    // in rules for the users collection itself (would cause circular dependency)
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() &&
+             getUserData().role == role &&
+             getUserData().isActive == true;
     }
 
     function isSuperAdmin() {
-      return isAuthenticated() &&
-             getUserRole() == 'superadmin' &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+      return hasRole('superadmin');
     }
 
     function isHR() {
-      return isAuthenticated() &&
-             getUserRole() == 'hr' &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+      return hasRole('hr');
     }
 
     function isScanner() {
-      return isAuthenticated() &&
-             getUserRole() == 'scanner' &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+      return hasRole('scanner');
     }
 
-    // Users collection
-    match /users/{userId} {
-      // Allow ANY authenticated user to read their own document (needed for login)
-      // This is SAFE because request.auth.uid == userId prevents users from reading others' docs
-      allow read: if request.auth.uid == userId;
+    function isStaff() {
+      return isSuperAdmin() || isHR() || isScanner();
+    }
 
-      // For admin operations (create, update, delete), check custom claims or check against a hardcoded superadmin list
-      // To avoid circular dependency, we don't use isSuperAdmin() for the users collection itself
-      allow create, update, delete: if request.auth.uid != null &&
+    // ==========================================
+    // Users collection - SPECIAL HANDLING
+    // ==========================================
+    // This collection requires special rules because other rules
+    // depend on reading from it. We cannot use role-based helper
+    // functions here as they would create a circular dependency.
+    match /users/{userId} {
+      // TEMPORARY DEBUG: Allow any authenticated user to read any user doc
+      // This helps diagnose if the issue is with rules or something else
+      // TODO: Revert to stricter rules after debugging
+      allow read: if request.auth != null;
+
+      // Only superadmin can create/update/delete users
+      allow create, update, delete: if request.auth != null &&
                                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin' &&
                                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
+    // ==========================================
     // Employees collection
+    // ==========================================
     match /employees/{employeeId} {
-      // Allow superadmin, HR to read all employees
-      // Allow scanner to read employees (for redemption)
-      // Allow anonymous users to read their own employee record (for dashboard)
-      allow read: if isSuperAdmin() || isHR() || isScanner() || isAuthenticated();
+      // Staff can read all employees, any authenticated user can read (for anonymous dashboard)
+      allow read: if isStaff() || isAuthenticated();
 
-      // Allow superadmin, HR to create employees
+      // SuperAdmin and HR can create employees
       allow create: if isSuperAdmin() || isHR();
 
-      // Allow superadmin, HR to update fully
-      // Allow scanner to update tokenBalance only (for redemption)
-      // Allow anonymous users to update registrationStatus only (for registration)
-      // Allow any anonymous user to update registrationStatus (cross-session registration)
+      // Update rules:
+      // - SuperAdmin/HR: full update
+      // - Scanner: only tokenBalance (for redemption)
+      // - Anonymous: only registrationStatus (for registration flow)
       allow update: if isSuperAdmin() || isHR() ||
                       (isScanner() &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tokenBalance'])) ||
                       (isAnonymous() &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registrationStatus']));
 
+      // Only superadmin can delete
       allow delete: if isSuperAdmin();
     }
 
+    // ==========================================
     // QR Codes collection
+    // ==========================================
     match /qrCodes/{qrCodeId} {
-      // Allow authenticated users to read (for code validation and employee dashboard)
+      // Any authenticated user can read (needed for validation and employee dashboard)
       allow read: if isAuthenticated();
 
-      // Allow superadmin, HR to create/delete
+      // SuperAdmin and HR can create
       allow create: if isSuperAdmin() || isHR();
+
+      // Only superadmin can delete
       allow delete: if isSuperAdmin();
 
-      // Allow superadmin, HR to update fully
-      // Allow anonymous users to update only registration fields
-      // Allow scanner users to update for token redemption
+      // Update rules:
+      // - SuperAdmin/HR/Scanner: full update
+      // - Anonymous: only registration fields
       allow update: if isSuperAdmin() || isHR() || isScanner() ||
                       (isAnonymous() &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRegistered', 'registeredAt', 'registeredDeviceId']));
     }
 
+    // ==========================================
     // Transactions collection
+    // ==========================================
     match /transactions/{transactionId} {
-      // Allow superadmin, HR to read all transactions
-      // Allow authenticated users to read transactions (for their own dashboard)
-      allow read: if isSuperAdmin() || isHR() || isAuthenticated();
+      // Staff and authenticated users can read
+      allow read: if isStaff() || isAuthenticated();
+
+      // Only scanner can create transactions
       allow create: if isScanner();
     }
 
+    // ==========================================
     // Event Config collection
+    // ==========================================
     match /eventConfig/{configId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
 
+    // ==========================================
     // Audit Logs collection
+    // ==========================================
     match /auditLogs/{logId} {
       allow read: if isSuperAdmin();
-      allow write: if false; // Only backend can write
+      allow write: if false; // Only backend/admin SDK can write
     }
   }
 }

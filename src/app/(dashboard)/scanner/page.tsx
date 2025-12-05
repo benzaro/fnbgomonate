@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { collection, query, where, getDocs, doc, runTransaction, serverTimestamp, orderBy, limit } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import ScanResultModal from "@/components/scanner/ScanResultModal";
 
 interface ScanHistoryItem {
     id: string;
@@ -17,13 +18,20 @@ interface CameraInfo {
     label: string;
 }
 
-type ScannerState = "initializing" | "streaming" | "error" | "unsupported" | "permission-denied";
+interface ModalData {
+    type: "success" | "error" | "warning";
+    title: string;
+    message: string;
+    employeeName?: string;
+    tokensRemaining?: number;
+    timestamp: Date;
+}
+
+type ScannerState = "initializing" | "streaming" | "paused" | "error" | "unsupported" | "permission-denied";
 
 export default function ScannerPage() {
-    const [scanResult, setScanResult] = useState<string | null>(null);
     const [manualCode, setManualCode] = useState("");
     const [processing, setProcessing] = useState(false);
-    const [message, setMessage] = useState<{ type: "success" | "error" | "warning"; text: string; details?: string } | null>(null);
     const [sessionScans, setSessionScans] = useState(0);
     const [showHistory, setShowHistory] = useState(false);
     const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
@@ -34,17 +42,53 @@ export default function ScannerPage() {
     const [errorMessage, setErrorMessage] = useState<string>("");
     const [switchingCamera, setSwitchingCamera] = useState(false);
 
+    // Modal state
+    const [showResultModal, setShowResultModal] = useState(false);
+    const [modalData, setModalData] = useState<ModalData | null>(null);
+
     const qrScannerRef = useRef<Html5Qrcode | null>(null);
     const initializingRef = useRef<boolean>(false);
     const cleanupRef = useRef<boolean>(false);
     const mountedRef = useRef<boolean>(true);
+    // Synchronous lock to prevent multiple scans - this is the key fix!
+    const scanLockRef = useRef<boolean>(false);
+
+    // Pause scanner
+    const pauseScanner = useCallback(async () => {
+        if (qrScannerRef.current) {
+            try {
+                const state = qrScannerRef.current.getState();
+                if (state === 2) { // 2 = SCANNING state
+                    await qrScannerRef.current.pause(true); // pause with video
+                    setScannerState("paused");
+                }
+            } catch (error) {
+                console.error("Scanner pause error:", error);
+            }
+        }
+    }, []);
+
+    // Resume scanner
+    const resumeScanner = useCallback(async () => {
+        if (qrScannerRef.current) {
+            try {
+                const state = qrScannerRef.current.getState();
+                if (state === 3) { // 3 = PAUSED state
+                    await qrScannerRef.current.resume();
+                    setScannerState("streaming");
+                }
+            } catch (error) {
+                console.error("Scanner resume error:", error);
+            }
+        }
+    }, []);
 
     // Stop scanner
     const stopScanner = useCallback(async () => {
         if (qrScannerRef.current) {
             try {
                 const state = qrScannerRef.current.getState();
-                if (state === 2) { // 2 = SCANNING state
+                if (state === 2 || state === 3) { // SCANNING or PAUSED state
                     await qrScannerRef.current.stop();
                 }
                 await qrScannerRef.current.clear();
@@ -59,11 +103,137 @@ export default function ScannerPage() {
         }
     }, []);
 
+    // Handle successful scan - defined before useEffect
+    const handleRedemption = useCallback(async (code: string) => {
+        // Synchronous lock check - this prevents race conditions
+        if (scanLockRef.current) {
+            console.log("Scan locked, ignoring duplicate scan");
+            return;
+        }
+
+        // Immediately lock before any async work
+        scanLockRef.current = true;
+        setProcessing(true);
+
+        // Pause scanner immediately to prevent more scans
+        await pauseScanner();
+
+        try {
+            const result = await runTransaction(db, async (transaction) => {
+                const qrCodesRef = collection(db, "qrCodes");
+
+                // First try to match by sixDigitCode (6-character alphanumeric codes)
+                let q = query(qrCodesRef, where("sixDigitCode", "==", code.toUpperCase()));
+                let snapshot = await getDocs(q);
+
+                // If not found and code looks like a QR id, try matching by id
+                if (snapshot.empty && (code.includes("_") || code.length > 10)) {
+                    q = query(qrCodesRef, where("id", "==", code));
+                    snapshot = await getDocs(q);
+                }
+
+                if (snapshot.empty) {
+                    throw new Error("Invalid QR Code");
+                }
+
+                const qrDoc = snapshot.docs[0];
+                const qrData = qrDoc.data();
+
+                if (!qrData.isActive) {
+                    throw new Error("QR Code is inactive");
+                }
+
+                const empDocRef = doc(db, "employees", qrData.employeeId);
+                const empDoc = await transaction.get(empDocRef);
+
+                if (!empDoc.exists()) {
+                    throw new Error("Employee not found");
+                }
+
+                const empData = empDoc.data();
+
+                if (empData.tokenBalance <= 0) {
+                    throw new Error("No tokens remaining");
+                }
+
+                const newBalance = empData.tokenBalance - 1;
+                transaction.update(empDocRef, { tokenBalance: newBalance });
+
+                const newTxRef = doc(collection(db, "transactions"));
+                transaction.set(newTxRef, {
+                    employeeId: qrData.employeeId,
+                    qrCodeId: qrDoc.id,
+                    scannerId: auth.currentUser?.uid,
+                    amount: 1,
+                    tokensBefore: empData.tokenBalance,
+                    tokensAfter: newBalance,
+                    timestamp: serverTimestamp(),
+                    type: "redemption",
+                });
+
+                return { newBalance, firstName: empData.firstName || "", lastName: empData.lastName || "" };
+            });
+
+            // Success - show modal
+            setModalData({
+                type: "success",
+                title: "Token Redeemed!",
+                message: "Beverage token successfully redeemed",
+                employeeName: `${result.firstName} ${result.lastName}`,
+                tokensRemaining: result.newBalance,
+                timestamp: new Date(),
+            });
+            setShowResultModal(true);
+            setSessionScans(prev => prev + 1);
+            addToLocalHistory(`${result.firstName} ${result.lastName}`, result.newBalance);
+
+        } catch (error: unknown) {
+            console.error("Redemption error:", error);
+            const errorMsg = error instanceof Error ? error.message : "Redemption failed";
+
+            // Determine modal type based on error
+            const isNoTokens = errorMsg.includes("No tokens");
+
+            setModalData({
+                type: isNoTokens ? "warning" : "error",
+                title: isNoTokens ? "No Tokens Left" : "Scan Failed",
+                message: errorMsg,
+                timestamp: new Date(),
+            });
+            setShowResultModal(true);
+        } finally {
+            setProcessing(false);
+            setManualCode("");
+        }
+    }, [pauseScanner]);
+
+    // Handle modal dismiss - resumes scanning
+    const handleModalDismiss = useCallback(async () => {
+        setShowResultModal(false);
+        setModalData(null);
+
+        // Small delay before unlocking to prevent immediate re-scan
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Unlock and resume
+        scanLockRef.current = false;
+        await resumeScanner();
+    }, [resumeScanner]);
+
+    // Scan success callback - uses ref for synchronous lock check
+    const onScanSuccess = useCallback((decodedText: string) => {
+        // Check lock synchronously before anything else
+        if (scanLockRef.current) {
+            return;
+        }
+        handleRedemption(decodedText);
+    }, [handleRedemption]);
+
     // Initialize cameras and scanner on mount
     useEffect(() => {
         mountedRef.current = true;
 
-        ;(async () => {
+        const initScanner = async () => {
             try {
                 if (initializingRef.current) return;
                 initializingRef.current = true;
@@ -136,8 +306,8 @@ export default function ScannerPage() {
                         qrbox: { width: 280, height: 280 },
                     },
                     onScanSuccess,
-                    (error) => {
-                        console.debug("QR scan error:", error);
+                    () => {
+                        // Silent failure - keep scanning
                     }
                 );
 
@@ -172,7 +342,9 @@ export default function ScannerPage() {
                 }
                 initializingRef.current = false;
             }
-        })();
+        };
+
+        initScanner();
 
         return () => {
             cleanupRef.current = true;
@@ -180,114 +352,13 @@ export default function ScannerPage() {
             mountedRef.current = false;
             stopScanner();
         };
-    }, [stopScanner]);
-
-    const onScanSuccess = (decodedText: string) => {
-        if (!processing) {
-            handleRedemption(decodedText);
-        }
-    };
-
-    const onScanFailure = () => {
-        // Silent failure - keep scanning
-    };
+    }, [stopScanner, onScanSuccess]);
 
     const handleManualSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (manualCode.trim()) {
+        if (manualCode.trim() && !scanLockRef.current) {
             handleRedemption(manualCode.trim());
         }
-    };
-
-    const handleRedemption = async (code: string) => {
-        if (processing) return;
-        setProcessing(true);
-        setMessage(null);
-        setScanResult(code);
-
-        try {
-            const result = await runTransaction(db, async (transaction) => {
-                const qrCodesRef = collection(db, "qrCodes");
-
-                // First try to match by sixDigitCode (6-character alphanumeric codes)
-                // This should be the primary method for new QR codes
-                let q = query(qrCodesRef, where("sixDigitCode", "==", code.toUpperCase()));
-                let snapshot = await getDocs(q);
-
-                // If not found and code looks like a QR id (contains underscore or longer),
-                // try matching by id for backwards compatibility with old QR codes
-                // Note: Old QR codes should be regenerated to use sixDigitCode encoding
-                if (snapshot.empty && (code.includes("_") || code.length > 10)) {
-                    q = query(qrCodesRef, where("id", "==", code));
-                    snapshot = await getDocs(q);
-                }
-
-                if (snapshot.empty) {
-                    throw new Error("Invalid QR Code");
-                }
-
-                const qrDoc = snapshot.docs[0];
-                const qrData = qrDoc.data();
-
-                if (!qrData.isActive) {
-                    throw new Error("QR Code is inactive");
-                }
-
-                const empDocRef = doc(db, "employees", qrData.employeeId);
-                const empDoc = await transaction.get(empDocRef);
-
-                if (!empDoc.exists()) {
-                    throw new Error("Employee not found");
-                }
-
-                const empData = empDoc.data();
-
-                if (empData.tokenBalance <= 0) {
-                    throw new Error(`No tokens remaining`);
-                }
-
-                const newBalance = empData.tokenBalance - 1;
-                transaction.update(empDocRef, { tokenBalance: newBalance });
-
-                const newTxRef = doc(collection(db, "transactions"));
-                transaction.set(newTxRef, {
-                    employeeId: qrData.employeeId,
-                    qrCodeId: qrDoc.id,
-                    scannerId: auth.currentUser?.uid,
-                    amount: 1,
-                    tokensBefore: empData.tokenBalance,
-                    tokensAfter: newBalance,
-                    timestamp: serverTimestamp(),
-                    type: "redemption",
-                });
-
-                return { newBalance, firstName: empData.firstName || "", lastName: empData.lastName || "" };
-            });
-
-            setMessage({
-                type: "success",
-                text: `Token Redeemed!`,
-                details: `${result.firstName} has ${result.newBalance} tokens remaining`,
-            });
-            setSessionScans(prev => prev + 1);
-            addToLocalHistory(`${result.firstName} ${result.lastName}`, result.newBalance);
-
-        } catch (error: unknown) {
-            console.error("Redemption error:", error);
-            setMessage({
-                type: "error",
-                text: error instanceof Error ? error.message : "Redemption failed",
-            });
-        } finally {
-            setProcessing(false);
-            setManualCode("");
-        }
-    };
-
-    const resetScanner = () => {
-        setScanResult(null);
-        setMessage(null);
-        setProcessing(false);
     };
 
     const handleCameraChange = async (cameraId: string) => {
@@ -303,11 +374,6 @@ export default function ScannerPage() {
             initializingRef.current = false;
             cleanupRef.current = false;
             setScannerState("initializing");
-
-            // Trigger reinitialization by clearing refs
-            if (qrScannerRef.current) {
-                qrScannerRef.current = null;
-            }
 
             // Create new scanner instance with selected camera
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -327,8 +393,8 @@ export default function ScannerPage() {
                     qrbox: { width: 280, height: 280 },
                 },
                 onScanSuccess,
-                (error) => {
-                    console.debug("QR scan error:", error);
+                () => {
+                    // Silent failure
                 }
             );
 
@@ -437,7 +503,7 @@ export default function ScannerPage() {
                                 <p className="font-medium mb-2 text-orange-300">To enable camera:</p>
                                 <ol className="list-decimal list-inside space-y-1">
                                     <li>Click the lock icon in your address bar</li>
-                                    <li>Find "Camera" and set it to "Allow"</li>
+                                    <li>Find &quot;Camera&quot; and set it to &quot;Allow&quot;</li>
                                     <li>Refresh the page</li>
                                 </ol>
                             </div>
@@ -468,6 +534,18 @@ export default function ScannerPage() {
 
     return (
         <div className="max-w-lg mx-auto animate-fade-in">
+            {/* Scan Result Modal */}
+            <ScanResultModal
+                isOpen={showResultModal}
+                type={modalData?.type || "success"}
+                title={modalData?.title || ""}
+                message={modalData?.message || ""}
+                employeeName={modalData?.employeeName}
+                tokensRemaining={modalData?.tokensRemaining}
+                timestamp={modalData?.timestamp}
+                onDismiss={handleModalDismiss}
+            />
+
             {/* Header */}
             <div className="text-center mb-8">
                 <h1 className="text-2xl font-bold text-white mb-2">Scan Drink Token</h1>
@@ -503,11 +581,24 @@ export default function ScannerPage() {
 
             {/* Scanner Area */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/10 relative overflow-hidden flex justify-center">
-                {scannerState === "initializing" && (
+                {(scannerState === "initializing" || scannerState === "paused") && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white/5 backdrop-blur-sm z-10">
                         <div className="text-center">
-                            <div className="spinner w-8 h-8 mx-auto mb-3 border-white/30 border-t-white" />
-                            <p className="text-white/70 text-sm">Initializing camera...</p>
+                            {scannerState === "initializing" ? (
+                                <>
+                                    <div className="spinner w-8 h-8 mx-auto mb-3 border-white/30 border-t-white" />
+                                    <p className="text-white/70 text-sm">Initializing camera...</p>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="w-8 h-8 mx-auto mb-3 rounded-full bg-[var(--fnb-teal)] flex items-center justify-center">
+                                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-white/70 text-sm">Scanner paused</p>
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
@@ -524,13 +615,13 @@ export default function ScannerPage() {
                         onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                         placeholder="A1B2C3"
                         className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-xl font-mono tracking-[0.3em] uppercase placeholder:text-white/30 focus:border-[var(--fnb-teal)] focus:ring-2 focus:ring-[var(--fnb-teal)]/20 outline-none transition-all"
-                        disabled={processing}
+                        disabled={processing || scanLockRef.current}
                         maxLength={6}
                     />
                     <div className="flex justify-center">
                         <button
                             type="submit"
-                            disabled={processing || !manualCode || manualCode.length < 6}
+                            disabled={processing || !manualCode || manualCode.length < 6 || scanLockRef.current}
                             className="btn-primary px-6 py-3 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {processing ? (
@@ -548,72 +639,6 @@ export default function ScannerPage() {
                 </form>
             </div>
 
-            {/* Feedback Message */}
-            {message && (
-                <div
-                    className={`rounded-2xl p-6 mb-6 animate-fade-in ${
-                        message.type === "success"
-                            ? "bg-[var(--success)]/20 border border-[var(--success)]/30"
-                            : message.type === "error"
-                            ? "bg-[var(--error)]/20 border border-[var(--error)]/30"
-                            : "bg-[var(--warning)]/20 border border-[var(--warning)]/30"
-                    }`}
-                >
-                    <div className="flex items-start gap-4">
-                        <div
-                            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                message.type === "success"
-                                    ? "bg-[var(--success)]"
-                                    : message.type === "error"
-                                    ? "bg-[var(--error)]"
-                                    : "bg-[var(--warning)]"
-                            }`}
-                        >
-                            {message.type === "success" ? (
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                            ) : message.type === "error" ? (
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            ) : (
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                            )}
-                        </div>
-                        <div className="flex-1">
-                            <h3
-                                className={`text-lg font-semibold ${
-                                    message.type === "success"
-                                        ? "text-[var(--success)]"
-                                        : message.type === "error"
-                                        ? "text-[var(--error)]"
-                                        : "text-[var(--warning)]"
-                                }`}
-                            >
-                                {message.text}
-                            </h3>
-                            {message.details && (
-                                <p className="text-white/70 mt-1">{message.details}</p>
-                            )}
-                            {message.type !== "success" && (
-                                <button
-                                    onClick={resetScanner}
-                                    className="mt-4 text-sm font-medium text-white/70 hover:text-white transition-colors flex items-center gap-1"
-                                >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                    Try Again
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Quick Stats */}
             <div className="grid grid-cols-2 gap-4">
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 text-center">
@@ -623,8 +648,10 @@ export default function ScannerPage() {
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 text-center">
                     <p className="text-xs text-white/50 uppercase tracking-wide mb-1">Status</p>
                     <div className="flex items-center justify-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
-                        <p className="text-lg font-semibold text-white">Ready</p>
+                        <div className={`w-2 h-2 rounded-full ${scannerState === "streaming" ? "bg-[var(--success)] animate-pulse" : scannerState === "paused" ? "bg-[var(--fnb-orange)]" : "bg-white/30"}`} />
+                        <p className="text-lg font-semibold text-white">
+                            {scannerState === "streaming" ? "Ready" : scannerState === "paused" ? "Paused" : "..."}
+                        </p>
                     </div>
                 </div>
             </div>
