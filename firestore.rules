@@ -11,29 +11,35 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
+    // Safe version that doesn't cause circular dependency
+    function getUserRole() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc.data.role;
+    }
+
     function isSuperAdmin() {
       return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin' &&
+             getUserRole() == 'superadmin' &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
     function isHR() {
       return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hr' &&
+             getUserRole() == 'hr' &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
     function isScanner() {
       return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'scanner' &&
+             getUserRole() == 'scanner' &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
     // Users collection
     match /users/{userId} {
-      // Allow authenticated users to read their own document (for role verification)
+      // Allow authenticated users to read their own document (needed for role checking in login)
       allow read: if request.auth.uid == userId;
-      // Allow superadmin to read/write all users
+      // Allow superadmin to read all users and manage them
       allow read, write: if isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
     }
