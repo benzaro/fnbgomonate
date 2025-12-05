@@ -18,12 +18,12 @@ export default function LoginPage() {
 
     // Redirect if already logged in
     useEffect(() => {
-        if (userData) {
+        if (!loading && userData) {
             if (userData.role === "superadmin") router.push("/admin");
             else if (userData.role === "hr") router.push("/hr");
             else if (userData.role === "scanner") router.push("/scanner");
         }
-    }, [userData, router]);
+    }, [userData, loading, router]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();

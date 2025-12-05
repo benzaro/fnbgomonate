@@ -34,13 +34,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             setUser(firebaseUser);
+            console.log("Auth state changed - user:", firebaseUser?.email || "none");
 
             if (firebaseUser) {
                 try {
+                    console.log("Attempting to fetch user document for:", firebaseUser.uid);
                     const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
                     if (userDoc.exists()) {
+                        console.log("User document found:", userDoc.data());
                         setUserData(userDoc.data() as UserData);
                     } else {
+                        console.log("User document does not exist in Firestore");
                         setUserData(null);
                     }
                 } catch (error: unknown) {
@@ -58,6 +62,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     setUserData(null);
                 }
             } else {
+                console.log("User not authenticated");
                 setUserData(null);
             }
 
