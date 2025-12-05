@@ -31,11 +31,36 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
+            // Log Firebase config for debugging
+            if (!auth) {
+                console.error("Firebase auth not initialized");
+                setError("System error: Firebase not initialized. Please refresh the page.");
+                return;
+            }
+
             await signInWithEmailAndPassword(auth, email, password);
             // AuthContext will handle state update and redirect
         } catch (err: unknown) {
-            console.error("Login error:", err);
-            setError("Invalid email or password");
+            console.error("Login error details:", err);
+
+            // Provide more specific error messages
+            if (err instanceof Error) {
+                const errorMessage = err.message.toLowerCase();
+
+                if (errorMessage.includes("invalid-email") || errorMessage.includes("user-not-found")) {
+                    setError("Email not found");
+                } else if (errorMessage.includes("wrong-password")) {
+                    setError("Incorrect password");
+                } else if (errorMessage.includes("too-many-requests")) {
+                    setError("Too many login attempts. Please try again later.");
+                } else if (errorMessage.includes("network") || errorMessage.includes("timeout")) {
+                    setError("Network error. Please check your connection and try again.");
+                } else {
+                    setError(err.message || "Invalid email or password");
+                }
+            } else {
+                setError("Invalid email or password");
+            }
         } finally {
             setLoading(false);
         }

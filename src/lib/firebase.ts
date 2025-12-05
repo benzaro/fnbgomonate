@@ -12,6 +12,18 @@ const firebaseConfig = {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Validate Firebase config on initialization
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId) {
+    console.error("Firebase configuration is incomplete. Check environment variables:", {
+        hasApiKey: !!firebaseConfig.apiKey,
+        hasAuthDomain: !!firebaseConfig.authDomain,
+        hasProjectId: !!firebaseConfig.projectId,
+        hasStorageBucket: !!firebaseConfig.storageBucket,
+        hasMessagingSenderId: !!firebaseConfig.messagingSenderId,
+        hasAppId: !!firebaseConfig.appId,
+    });
+}
+
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
