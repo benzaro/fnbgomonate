@@ -37,11 +37,15 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      // Allow authenticated users to read their own document (needed for role checking in login)
+      // Allow ANY authenticated user to read their own document (needed for login)
+      // This is SAFE because request.auth.uid == userId prevents users from reading others' docs
       allow read: if request.auth.uid == userId;
-      // Allow superadmin to read all users and manage them
-      allow read, write: if isSuperAdmin();
-      allow create, update, delete: if isSuperAdmin();
+
+      // For admin operations (create, update, delete), check custom claims or check against a hardcoded superadmin list
+      // To avoid circular dependency, we don't use isSuperAdmin() for the users collection itself
+      allow create, update, delete: if request.auth.uid != null &&
+                                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin' &&
+                                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
     // Employees collection
