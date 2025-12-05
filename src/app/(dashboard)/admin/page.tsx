@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getCountFromServer, query, where } from "firebase/firestore";
+import { collection, getCountFromServer, query, where, getDocs, sumDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import Link from "next/link";
 
 interface DashboardMetrics {
     totalRegistrations: number;
@@ -36,7 +37,17 @@ export default function AdminDashboard() {
                 const scannerQuery = query(usersColl, where("role", "==", "scanner"), where("isActive", "==", true));
                 const scannerSnapshot = await getCountFromServer(scannerQuery);
 
-                const totalRedeemed = 0;
+                // Calculate total redeemed from transactions
+                const transactionsColl = collection(db, "transactions");
+                const transactionsQuery = query(transactionsColl, where("type", "==", "redemption"));
+                const transactionsSnapshot = await getDocs(transactionsQuery);
+
+                let totalRedeemed = 0;
+                transactionsSnapshot.forEach((doc) => {
+                    const txData = doc.data();
+                    totalRedeemed += txData.amount || 1; // Sum up amount field, default to 1
+                });
+
                 const totalAllocated = registeredSnapshot.data().count * 18;
                 const redemptionRate = totalAllocated > 0 ? (totalRedeemed / totalAllocated) * 100 : 0;
 
@@ -184,31 +195,31 @@ export default function AdminDashboard() {
                 <div className="bg-[var(--background-card)] rounded-2xl shadow-sm border border-[var(--border-light)] p-6">
                     <h2 className="text-lg font-semibold text-[var(--foreground)] mb-6">Quick Actions</h2>
                     <div className="grid grid-cols-2 gap-4">
-                        <button className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--fnb-teal)] hover:bg-[var(--fnb-teal-light)] transition-all group">
+                        <Link href="/admin/users" className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--fnb-teal)] hover:bg-[var(--fnb-teal-light)] transition-all group">
                             <div className="w-12 h-12 rounded-full bg-[var(--fnb-teal-light)] group-hover:bg-[var(--fnb-teal)] flex items-center justify-center mb-3 transition-colors">
                                 <svg className="w-6 h-6 text-[var(--fnb-teal)] group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                                 </svg>
                             </div>
                             <span className="text-sm font-medium text-[var(--foreground)]">Add User</span>
-                        </button>
-                        <button className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--fnb-orange)] hover:bg-[var(--fnb-orange-light)] transition-all group">
+                        </Link>
+                        <Link href="/admin/reports" className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--fnb-orange)] hover:bg-[var(--fnb-orange-light)] transition-all group">
                             <div className="w-12 h-12 rounded-full bg-[var(--fnb-orange-light)] group-hover:bg-[var(--fnb-orange)] flex items-center justify-center mb-3 transition-colors">
                                 <svg className="w-6 h-6 text-[var(--fnb-orange)] group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                             </div>
                             <span className="text-sm font-medium text-[var(--foreground)]">Export Report</span>
-                        </button>
-                        <button className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--success)] hover:bg-[var(--success-light)] transition-all group">
+                        </Link>
+                        <Link href="/admin/employees" className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--success)] hover:bg-[var(--success-light)] transition-all group">
                             <div className="w-12 h-12 rounded-full bg-[var(--success-light)] group-hover:bg-[var(--success)] flex items-center justify-center mb-3 transition-colors">
                                 <svg className="w-6 h-6 text-[var(--success)] group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                 </svg>
                             </div>
                             <span className="text-sm font-medium text-[var(--foreground)]">Import Data</span>
-                        </button>
-                        <button className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[#8B5CF6] hover:bg-[#EDE9FE] transition-all group">
+                        </Link>
+                        <Link href="/admin/settings" className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[#8B5CF6] hover:bg-[#EDE9FE] transition-all group">
                             <div className="w-12 h-12 rounded-full bg-[#EDE9FE] group-hover:bg-[#8B5CF6] flex items-center justify-center mb-3 transition-colors">
                                 <svg className="w-6 h-6 text-[#8B5CF6] group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -216,7 +227,7 @@ export default function AdminDashboard() {
                                 </svg>
                             </div>
                             <span className="text-sm font-medium text-[var(--foreground)]">Settings</span>
-                        </button>
+                        </Link>
                     </div>
                 </div>
             </div>

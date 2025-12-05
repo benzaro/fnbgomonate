@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, updateDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 
 interface SystemUser {
@@ -49,19 +49,30 @@ export default function UserManagement() {
         e.preventDefault();
         setCreating(true);
         try {
-            await addDoc(collection(db, "users"), {
-                ...newUser,
-                isActive: true,
-                createdAt: serverTimestamp(),
-                createdBy: auth.currentUser?.uid,
+            const response = await fetch("/api/users", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    ...newUser,
+                    createdBy: auth.currentUser?.uid,
+                }),
             });
 
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to create user");
+            }
+
+            alert(`User created successfully!\n\nDefault password: changeme\n\nThe user will be prompted to change their password on first login.`);
             setIsModalOpen(false);
             setNewUser({ email: "", firstName: "", lastName: "", role: "hr" });
             fetchUsers();
         } catch (error) {
             console.error("Error creating user:", error);
-            alert("Failed to create user");
+            alert(error instanceof Error ? error.message : "Failed to create user");
         } finally {
             setCreating(false);
         }

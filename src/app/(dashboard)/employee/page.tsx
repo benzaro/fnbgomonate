@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { QRCodeCanvas } from "qrcode.react";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "@/lib/firebase";
 import Image from "next/image";
+import QRCodeWithLogo from "@/components/QRCodeWithLogo";
+import { QRCodeCanvas } from "qrcode.react";
 
 interface EmployeeData {
     id: string;
@@ -30,14 +32,27 @@ export default function EmployeeDashboard() {
     const router = useRouter();
 
     useEffect(() => {
-        const fetchEmployeeData = async () => {
-            const storedCodeId = localStorage.getItem("gomonate_employee_code");
+        const storedCodeId = localStorage.getItem("gomonate_employee_code");
 
-            if (!storedCodeId) {
-                router.push("/register");
-                return;
+        if (!storedCodeId) {
+            router.push("/register");
+            return;
+        }
+
+        // Ensure user is signed in anonymously before accessing Firestore
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                // Sign in anonymously if not already signed in
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Error signing in anonymously:", error);
+                    setLoading(false);
+                }
+                return; // onAuthStateChanged will fire again after sign in
             }
 
+            // User is signed in, fetch data
             try {
                 const qrDocRef = doc(db, "qrCodes", storedCodeId);
                 const qrDoc = await getDoc(qrDocRef);
@@ -65,16 +80,45 @@ export default function EmployeeDashboard() {
             } finally {
                 setLoading(false);
             }
-        };
+        });
 
         const loadEmployee = async (employeeId: string) => {
             const empDoc = await getDoc(doc(db, "employees", employeeId));
             if (empDoc.exists()) {
                 setEmployee({ id: empDoc.id, ...empDoc.data() } as EmployeeData);
 
+                // Try to load transactions, but don't fail if not allowed
+                try {
+                    const transQ = query(
+                        collection(db, "transactions"),
+                        where("employeeId", "==", employeeId),
+                        orderBy("timestamp", "desc"),
+                        limit(10)
+                    );
+                    const transSnapshot = await getDocs(transQ);
+                    const transList: Transaction[] = [];
+                    transSnapshot.forEach(doc => {
+                        transList.push({ id: doc.id, ...doc.data() } as Transaction);
+                    });
+                    setTransactions(transList);
+                } catch (error) {
+                    // Transactions might not be accessible, that's okay
+                    console.log("Could not load transactions:", error);
+                }
+            }
+        };
+
+        return () => unsubscribe();
+    }, [router]);
+
+    const refreshData = async () => {
+        setRefreshing(true);
+        try {
+            const storedCodeId = localStorage.getItem("gomonate_employee_code");
+            if (storedCodeId && employee) {
                 const transQ = query(
                     collection(db, "transactions"),
-                    where("employeeId", "==", employeeId),
+                    where("employeeId", "==", employee.id),
                     orderBy("timestamp", "desc"),
                     limit(10)
                 );
@@ -84,20 +128,56 @@ export default function EmployeeDashboard() {
                     transList.push({ id: doc.id, ...doc.data() } as Transaction);
                 });
                 setTransactions(transList);
+
+                // Also refresh employee data
+                const empDoc = await getDoc(doc(db, "employees", employee.id));
+                if (empDoc.exists()) {
+                    setEmployee({ id: empDoc.id, ...empDoc.data() } as EmployeeData);
+                }
             }
-        };
-
-        fetchEmployeeData();
-    }, [router]);
-
-    const refreshData = async () => {
-        setRefreshing(true);
-        window.location.reload();
+        } catch (error) {
+            console.error("Error refreshing data:", error);
+        } finally {
+            setRefreshing(false);
+        }
     };
 
     const handleLogout = () => {
         localStorage.removeItem("gomonate_employee_code");
         router.push("/register");
+    };
+
+    const saveQRCode = async () => {
+        const qrCanvas = document.querySelector("canvas");
+        if (!qrCanvas) {
+            alert("QR Code not found");
+            return;
+        }
+
+        try {
+            // Convert canvas to blob
+            qrCanvas.toBlob((blob) => {
+                if (!blob) return;
+
+                // Create a temporary download link
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `gomonate-qr-${sixDigitCode || "code"}.png`;
+
+                // Trigger download
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                // Show success message
+                alert("QR Code saved to your device!");
+            });
+        } catch (error) {
+            console.error("Error saving QR code:", error);
+            alert("Failed to save QR code");
+        }
     };
 
     if (loading) {
@@ -158,16 +238,6 @@ export default function EmployeeDashboard() {
                         <h2 className="text-sm font-medium text-[var(--muted)] uppercase tracking-wide">
                             Token Balance
                         </h2>
-                        <button
-                            onClick={refreshData}
-                            disabled={refreshing}
-                            className="p-2 rounded-lg hover:bg-[var(--background)] transition-colors disabled:opacity-50"
-                            title="Refresh balance"
-                        >
-                            <svg className={`w-5 h-5 text-[var(--muted)] ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                        </button>
                     </div>
 
                     {/* Circular Progress */}
@@ -202,13 +272,26 @@ export default function EmployeeDashboard() {
                             </div>
                         </div>
 
-                        <p className="text-center text-[var(--muted)]">
+                        <p className="text-center text-[var(--muted)] mb-4">
                             {employee.tokenBalance === 0
                                 ? "You've used all your tokens!"
                                 : employee.tokenBalance === 18
                                     ? "All tokens available"
                                     : `${18 - employee.tokenBalance} tokens redeemed`}
                         </p>
+
+                        {/* Refresh Button */}
+                        <button
+                            onClick={refreshData}
+                            disabled={refreshing}
+                            className="w-full px-4 py-3 rounded-xl font-semibold bg-[var(--fnb-orange)] text-black hover:bg-[#E58A1F] disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+                            title="Refresh balance and activity"
+                        >
+                            <svg className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            {refreshing ? "Refreshing..." : "Refresh"}
+                        </button>
                     </div>
                 </div>
 
@@ -221,11 +304,11 @@ export default function EmployeeDashboard() {
                     {/* QR Code */}
                     <div className="flex justify-center mb-4">
                         <div className="p-4 bg-white rounded-2xl shadow-inner pulse-qr">
-                            <QRCodeCanvas
+                            <QRCodeWithLogo
                                 value={qrCodeId}
                                 size={200}
+                                logoSize={60}
                                 level="H"
-                                includeMargin={false}
                             />
                         </div>
                     </div>
@@ -240,9 +323,21 @@ export default function EmployeeDashboard() {
                         </div>
                     )}
 
-                    <p className="text-sm text-[var(--muted)] text-center">
+                    <p className="text-sm text-[var(--muted)] text-center mb-6">
                         Show this QR code at any beverage station to redeem your drinks
                     </p>
+
+                    {/* Save Button */}
+                    <button
+                        onClick={saveQRCode}
+                        className="w-full px-4 py-3 rounded-xl font-semibold bg-[var(--fnb-orange)] text-black hover:bg-[#E58A1F] transition-all flex items-center justify-center gap-2"
+                        title="Save QR code to your device"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Save Code
+                    </button>
                 </div>
 
                 {/* Activity History Card */}
