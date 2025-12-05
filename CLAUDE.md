@@ -72,6 +72,18 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 - Storage rules in `storage.rules`
 - Deploy rules with Firebase CLI: `firebase deploy --only firestore:rules,storage`
 
+### Important: Authorized Domains
+
+When deploying to production (Vercel or custom domain), you must add the domain to Firebase's **Authorized Domains** list:
+
+1. Go to Firebase Console → Authentication → Settings
+2. Scroll to "Authorized domains"
+3. Add your domain (e.g., `fnbgomonate.vercel.app`)
+4. Without this, login will fail with "Invalid email or password" error
+
+Domains already authorized:
+- `localhost` (automatic for development)
+
 ## Path Aliases
 
 Use `@/*` to import from `src/*` (configured in tsconfig.json).
