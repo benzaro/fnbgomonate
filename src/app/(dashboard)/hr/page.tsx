@@ -320,7 +320,7 @@ export default function HRDashboard() {
                                     <div className="flex justify-center mb-6">
                                         <div className="p-4 bg-white rounded-2xl shadow-inner">
                                             <QRCodeWithLogo
-                                                value={assignedQR.id}
+                                                value={assignedQR.sixDigitCode}
                                                 size={200}
                                                 logoSize={60}
                                                 level="H"
