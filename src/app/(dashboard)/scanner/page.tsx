@@ -496,7 +496,7 @@ export default function ScannerPage() {
             )}
 
             {/* Scanner Area */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/10 relative overflow-hidden">
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/10 relative overflow-hidden flex justify-center">
                 {scannerState === "initializing" && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white/5 backdrop-blur-sm z-10">
                         <div className="text-center">
@@ -505,7 +505,7 @@ export default function ScannerPage() {
                         </div>
                     </div>
                 )}
-                <div id="qr-scanner-container" className="overflow-hidden rounded-xl h-80" />
+                <div id="qr-scanner-container" className="overflow-hidden rounded-xl w-80 h-80" />
             </div>
 
             {/* Manual Entry */}
