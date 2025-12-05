@@ -208,11 +208,17 @@ export default function ScannerPage() {
         try {
             const result = await runTransaction(db, async (transaction) => {
                 const qrCodesRef = collection(db, "qrCodes");
-                let q = query(qrCodesRef, where("id", "==", code));
+
+                // First try to match by sixDigitCode (6-character alphanumeric codes)
+                // This should be the primary method for new QR codes
+                let q = query(qrCodesRef, where("sixDigitCode", "==", code.toUpperCase()));
                 let snapshot = await getDocs(q);
 
-                if (snapshot.empty) {
-                    q = query(qrCodesRef, where("sixDigitCode", "==", code.toUpperCase()));
+                // If not found and code looks like a QR id (contains underscore or longer),
+                // try matching by id for backwards compatibility with old QR codes
+                // Note: Old QR codes should be regenerated to use sixDigitCode encoding
+                if (snapshot.empty && (code.includes("_") || code.length > 10)) {
+                    q = query(qrCodesRef, where("id", "==", code));
                     snapshot = await getDocs(q);
                 }
 
